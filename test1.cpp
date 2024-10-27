@@ -12,7 +12,6 @@
 
 using namespace std;
 
-
 //Global queue and unordered set for bfs web crawling
 unordered_set<string> visitedURLs;
 queue<string> urlQueue;
@@ -32,30 +31,29 @@ size_t storeHTML(void *packetContent, size_t size, size_t nmemb, void* node); //
 int crawlWeb ( const char* baseURL ); 
 char* resolveURL(const char* baseURL, const char* relativeURL);
 Node makeHTTPRequest(CURL* curl, const char* baseURL);
-void parseHTML(CURL* curl, char* HTML, const char* baseURL);
-void trv_DOM_push_URL(CURL* curl, xmlNode* node, const char* baseURL );
+void parseHTML(char* HTML, const char* baseURL);
+void trv_DOM_push_URL(xmlNode* node, const char* baseURL );
+string extractDomain(const string& url);
 
-// FUNTIONS TO CHECK ROBOT.TXT COMPLIANCE
+// FUNCTIONS TO CHECK ROBOT.TXT COMPLIANCE
 Node fetchRobotsTxt ( CURL* curl , const char* baseURL );
 unordered_set<string> parseRobotsTxt ( char* robotsTxtContent);
-bool isURLAllowed( const string& urlPath , const unordered_set<string>& disallowedPath );
-
-
-
-
-
+bool isURLAllowed( const string currentURL , const unordered_set<string>& disallowedPath );
 
 
 int main() 
 {
     // Initialize curl and base baseURL
-    const char* baseURL = "https://en.wikipedia.org/wiki/Main_Page";
+    const char* baseURL = "https://alltop.com/";
     crawlWeb (baseURL);
   
     return EXIT_SUCCESS;
 }
 
 // FUNCTIONS TO CRAWL WEBPAGES AND PARSE HTML 
+
+
+
 
 
 int crawlWeb ( const char* baseURL )
@@ -67,6 +65,9 @@ int crawlWeb ( const char* baseURL )
         cout << "Failed to initialize curl" << endl;
         return EXIT_FAILURE;
     }
+
+    // keep current domain
+    string currentDomain = extractDomain(baseURL);
 
     // Handling robots.txt for base domain
     unordered_set<string> disallowedPaths;
@@ -87,17 +88,28 @@ int crawlWeb ( const char* baseURL )
         const string currentURL = urlQueue.front();
         urlQueue.pop();
 
-         // Extract path starting after "https://"
-        string path;
-        size_t pos = currentURL.find("/", 8);  // Find position of "/" after "https://"
+        string newDomain  = extractDomain( currentURL ) ; 
+        if ( newDomain != currentDomain) // getting robots.txt of new domain
+        {
+            cout << "Switching to new domain: " << newDomain << endl;
+            currentDomain = newDomain;
 
-        // Check if the position is valid
-        if (pos != string::npos) 
-            path = currentURL.substr(pos);
-        else 
-            path = "/";  // Handle the case where no "/" is found after the domain
+            // Fetch and check the robots.txt for the new domain
+            Node newRobotTxtNode = fetchRobotsTxt( curl , currentDomain.c_str() );
+            if (newRobotTxtNode.packetSize != -1)
+            {
+                disallowedPaths = parseRobotsTxt( newRobotTxtNode.packetHTML );
+                free( newRobotTxtNode.packetHTML );
+            }
+            else 
+            {
+                // Clear disallowed paths if no robots.txt found
+                disallowedPaths.clear();
+            }
+        }
+        
 
-        if ( !isURLAllowed ( path , disallowedPaths) )
+        if ( !isURLAllowed ( currentURL, disallowedPaths) )
         {
             cout<< "URL dissallowed by robots.txt" << currentURL << endl;
             continue;
@@ -106,7 +118,7 @@ int crawlWeb ( const char* baseURL )
         Node node = makeHTTPRequest(curl, currentURL.c_str() );
         // Parse the HTML
         if ( node.packetSize != -1)
-            parseHTML(curl, node.packetHTML, baseURL);
+            parseHTML(node.packetHTML, newDomain.c_str() );
 
         free(node.packetHTML); // Free the memory after parsing
 
@@ -116,6 +128,11 @@ int crawlWeb ( const char* baseURL )
     curl_easy_cleanup(curl);
     return EXIT_SUCCESS;
 }
+
+
+
+
+
 
 Node makeHTTPRequest(CURL* curl, const char* baseURL)
 {
@@ -130,6 +147,7 @@ Node makeHTTPRequest(CURL* curl, const char* baseURL)
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&node);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1000);
 
 
     // Perform curl action
@@ -146,7 +164,7 @@ Node makeHTTPRequest(CURL* curl, const char* baseURL)
 
 
 
-void parseHTML(CURL* curl, char* HTML, const char* baseURL) 
+void parseHTML( char* HTML, const char* baseURL) 
 {
     htmlDocPtr doc = htmlReadMemory(HTML, strlen(HTML), baseURL, NULL, HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING);
 
@@ -157,7 +175,7 @@ void parseHTML(CURL* curl, char* HTML, const char* baseURL)
 
     // Get the root node and start traversing
     xmlNode* rootNode = xmlDocGetRootElement(doc);
-    trv_DOM_push_URL(curl, rootNode, baseURL); // Traverse the entire DOM tree
+    trv_DOM_push_URL( rootNode, baseURL); // Traverse the entire DOM tree
 
     xmlFreeDoc(doc); // Free the document after use
 }
@@ -165,7 +183,7 @@ void parseHTML(CURL* curl, char* HTML, const char* baseURL)
 
 
 // Recursive function to traverse nodes
-void trv_DOM_push_URL(CURL* curl, xmlNode* node, const char* baseURL) 
+void trv_DOM_push_URL( xmlNode* node, const char* baseURL) 
 {
     for (; node; node = node->next) 
     {
@@ -199,7 +217,7 @@ void trv_DOM_push_URL(CURL* curl, xmlNode* node, const char* baseURL)
             
         }
         // Recursively traverse child nodes
-        trv_DOM_push_URL(curl, node->children, baseURL);
+        trv_DOM_push_URL( node->children, baseURL);
     }
 }
 
@@ -208,6 +226,12 @@ void trv_DOM_push_URL(CURL* curl, xmlNode* node, const char* baseURL)
 // funtion to get absoloute URL
 char* resolveURL(const char* baseURL, const char* relativeURL) 
 {
+    // If the relative URL is actually an absolute URL, return it directly
+    if (strncmp(relativeURL, "http://", 7) == 0 || strncmp(relativeURL, "https://", 8) == 0) {
+        return strdup(relativeURL);  // Return the absolute URL directly
+    }
+
+    //In case or relative url
     xmlChar* fullURL = xmlBuildURI(BAD_CAST relativeURL, BAD_CAST baseURL);
     if (fullURL == NULL)
         return NULL;
@@ -216,6 +240,32 @@ char* resolveURL(const char* baseURL, const char* relativeURL)
     xmlFree(fullURL);
 
     return result;
+}
+
+string extractDomain(const string& url)  // "https://en.wikipedia.org/wiki/Main_Page"
+{
+    size_t protocolPos = url.find("://");
+    size_t domainStart = (protocolPos == string::npos) ? 0 : protocolPos + 3;
+
+    // Find the position of the first '/' after the domain
+    size_t domainEnd = url.find("/", domainStart);
+    if (domainEnd == string::npos) {
+        domainEnd = url.length();
+    }
+
+    // Extract the domain part
+    string domain = url.substr(domainStart, domainEnd - domainStart);
+
+    // Split the domain by '.' to identify parts
+    size_t lastDot = domain.rfind('.');
+    size_t secondLastDot = domain.rfind('.', lastDot - 1);
+
+    // If there are two or more parts, extract SLD + TLD
+    if (secondLastDot != string::npos) {
+        return domain.substr(secondLastDot + 1);
+    }
+
+    return domain;
 }
 
 
@@ -236,6 +286,11 @@ size_t storeHTML(void* packetContent, size_t size, size_t nmemb, void* node)
 
     return size * nmemb;
 }
+
+
+
+
+
 
 
 // FUNTIONS TO CHECK ROBOT.TXT COMPLIANCE
@@ -276,7 +331,7 @@ unordered_set<string> parseRobotsTxt ( char* robotsTxtContent )
                 try
                 {
                     string disallowedPath = lineStr.substr( colonPos + 1);
-                    disallowedPath.erase( remove ( disallowedPath.begin() , disallowedPath.end() , ' ') , disallowedPath.end() ) ;
+                    disallowedPath.erase( remove ( disallowedPath.begin() , disallowedPath.end() , ' ') , disallowedPath.end() ) ; // removing spaces from disallowed path
                     disallowedPaths.insert( disallowedPath );
                 }
                 catch ( exception& e)
@@ -292,8 +347,18 @@ unordered_set<string> parseRobotsTxt ( char* robotsTxtContent )
     return disallowedPaths;
 }
 
-bool isURLAllowed(const string& urlPath, const unordered_set<string>& disallowedPaths)
+bool isURLAllowed(const string currentURL , const unordered_set<string>& disallowedPaths)
 {
+    // Extract path starting after "https://"
+    string urlPath;
+    size_t pos = currentURL.find("/", 8);  // Find position of "/" after "https://"
+
+    // Check if the position is valid
+    if (pos != string::npos) 
+        urlPath = currentURL.substr(pos);
+    else 
+        urlPath = "/";  // Handle the case where no "/" is found after the domain
+
     for (const string& disallowed : disallowedPaths) 
     {
         if (urlPath.find(disallowed) == 0) // Check if URL path starts with a disallowed path

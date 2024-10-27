@@ -12,7 +12,6 @@
 
 using namespace std;
 
-
 //Global queue and unordered set for bfs web crawling
 unordered_set<string> visitedURLs;
 queue<string> urlQueue;
@@ -45,7 +44,7 @@ bool isURLAllowed( const string currentURL , const unordered_set<string>& disall
 int main() 
 {
     // Initialize curl and base baseURL
-    const char* baseURL = "https://en.wikipedia.org/wiki/Main_Page";
+    const char* baseURL = "https://alltop.com/";
     crawlWeb (baseURL);
   
     return EXIT_SUCCESS;
@@ -96,7 +95,7 @@ int crawlWeb ( const char* baseURL )
             currentDomain = newDomain;
 
             // Fetch and check the robots.txt for the new domain
-            Node newRobotTxtNode = fetchRobotsTxt( curl , newDomain.c_str() );
+            Node newRobotTxtNode = fetchRobotsTxt( curl , currentDomain.c_str() );
             if (newRobotTxtNode.packetSize != -1)
             {
                 disallowedPaths = parseRobotsTxt( newRobotTxtNode.packetHTML );
@@ -148,6 +147,7 @@ Node makeHTTPRequest(CURL* curl, const char* baseURL)
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&node);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1000);
 
 
     // Perform curl action
@@ -245,16 +245,27 @@ char* resolveURL(const char* baseURL, const char* relativeURL)
 string extractDomain(const string& url)  // "https://en.wikipedia.org/wiki/Main_Page"
 {
     size_t protocolPos = url.find("://");
-    if (protocolPos == string::npos)
-        return url;  // Malformed URL; return as is
+    size_t domainStart = (protocolPos == string::npos) ? 0 : protocolPos + 3;
 
-    size_t domainStart = protocolPos + 3;  // Skip "http://"
-    size_t domainEnd = url.find("/", domainStart);  // End of domain part
+    // Find the position of the first '/' after the domain
+    size_t domainEnd = url.find("/", domainStart);
+    if (domainEnd == string::npos) {
+        domainEnd = url.length();
+    }
 
-    if (domainEnd == string::npos)  // No '/' after domain
-        return url.substr(domainStart);  // Return whole domain part
+    // Extract the domain part
+    string domain = url.substr(domainStart, domainEnd - domainStart);
 
-    return url.substr(domainStart, domainEnd - domainStart);  // Extract domain
+    // Split the domain by '.' to identify parts
+    size_t lastDot = domain.rfind('.');
+    size_t secondLastDot = domain.rfind('.', lastDot - 1);
+
+    // If there are two or more parts, extract SLD + TLD
+    if (secondLastDot != string::npos) {
+        return domain.substr(secondLastDot + 1);
+    }
+
+    return domain;
 }
 
 
@@ -275,18 +286,6 @@ size_t storeHTML(void* packetContent, size_t size, size_t nmemb, void* node)
 
     return size * nmemb;
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
