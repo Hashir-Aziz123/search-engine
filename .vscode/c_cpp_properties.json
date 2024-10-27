@@ -4,7 +4,9 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "/usr/include/libxml2"
+                "/usr/include/libxml2",
+                "/home/lbp400/.local/lib/python3.10/site-packages/pybind11/include",
+                "/usr/include/python3.10"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",

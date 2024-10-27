@@ -8,9 +8,11 @@
 #include <libxml/HTMLtree.h>
 #include <libxml/uri.h>
 #include <unordered_set>
+#include <pybind11/embed.h> 
 #include <queue> 
 
 using namespace std;
+namespace py = pybind11;
 
 //Global queue and unordered set for bfs web crawling
 unordered_set<string> visitedURLs;
@@ -43,8 +45,27 @@ bool isURLAllowed( const string currentURL , const unordered_set<string>& disall
 
 int main() 
 {
+    // Initializing embedded python
+
+    py::scoped_interpreter guard{}; // start python's interpreter
+
+    try 
+    {
+        py:: module lemmatizer = py::module::import("lemmatizer");
+        py::object lemmatize_word = lemmatizer.attr("lemmatize_word");
+
+        py::object result = lemmatize_word("running");
+        cout<< "Lemmatized word:" << result.cast<string>() <<endl;
+
+    }
+    catch( const py:: error_already_set & e )
+    {
+        cout << "Python error :" << e.what() << endl;
+    }
+
+
     // Initialize curl and base baseURL
-    const char* baseURL = "https://alltop.com/";
+    const char* baseURL = "https://en.wikipedia.org/wiki/Main_Page";
     crawlWeb (baseURL);
   
     return EXIT_SUCCESS;
