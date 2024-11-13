@@ -3,18 +3,42 @@
 #include <string.h>
 #include <cstring>
 #include <algorithm>
+#include <sstream>
+#include <regex>
+
+#include <unordered_set>
+#include <queue> 
+
 #include <curl/curl.h>
 #include <libxml/HTMLparser.h>
 #include <libxml/HTMLtree.h>
 #include <libxml/uri.h>
-#include <unordered_set>
-#include <queue> 
+
+#include <pybind11/embed.h> 
+
 
 using namespace std;
+namespace py = pybind11;
 
 //Global queue and unordered set for bfs web crawling
 unordered_set<string> visitedURLs;
 queue<string> urlQueue;
+
+//Stop words to contain
+const unordered_set<string> stopWords = {
+    "I" , "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours",
+    "yourself", "yourselves", "he", "him", "his", "himself", "she", "her", "hers", "herself",
+    "it", "its", "itself", "they", "them", "their", "theirs", "themselves", "what", "which",
+    "who", "whom", "this", "that", "these", "those", "am", "is", "are", "was", "were", "be",
+    "been", "being", "have", "has", "had", "having", "do", "does", "did", "doing", "a", "an",
+    "the", "and", "but", "if", "or", "because", "as", "until", "while", "of", "at", "by",
+    "for", "with", "about", "against", "between", "into", "through", "during", "before", "after",
+    "above", "below", "to", "from", "up", "down", "in", "out", "on", "off", "over", "under",
+    "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all",
+    "any", "both", "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not",
+    "only", "own", "same", "so", "than", "too", "very", "s", "t", "can", "will", "just",
+    "don", "should", "now" // maybe add more
+};
 
 // Data Structure for memory usage
 struct Node {
@@ -32,17 +56,34 @@ int crawlWeb ( const char* baseURL );
 char* resolveURL(const char* baseURL, const char* relativeURL);
 Node makeHTTPRequest(CURL* curl, const char* baseURL);
 void parseHTML(char* HTML, const char* baseURL);
-void trv_DOM_push_URL(xmlNode* node, const char* baseURL );
+void dom_traversal_and_processing(xmlNode* node, const char* baseURL );
 string extractDomain(const string& url);
+
+//FUNCTIONS TO PROCESS HTML CONTENT
+vector<string> handleKeyWordsDetection( xmlNode* node);
+void handleURLDetection( xmlNode* node , const char* baseURL);
 
 // FUNCTIONS TO CHECK ROBOT.TXT COMPLIANCE
 Node fetchRobotsTxt ( CURL* curl , const char* baseURL );
 unordered_set<string> parseRobotsTxt ( char* robotsTxtContent);
 bool isURLAllowed( const string currentURL , const unordered_set<string>& disallowedPath );
 
+//FUNCTIONS TO PROCESS KEYWORDS EXTRACTION
+vector<string> processKeyWords(string text);
+void handleURLDetection( xmlNode* node , const char* baseURL);
+
+py::scoped_interpreter guard{}; 
+
+py:: module lemmatizer = py::module::import("lemmatizer");
+py::object lemmatize_word = lemmatizer.attr("lemmatize_word");
+
+
+
 
 int main() 
 {
+
+
     // Initialize curl and base baseURL
     const char* baseURL = "https://alltop.com/";
     crawlWeb (baseURL);
@@ -50,10 +91,15 @@ int main()
     return EXIT_SUCCESS;
 }
 
+
+
+
+
+
+
+
+
 // FUNCTIONS TO CRAWL WEBPAGES AND PARSE HTML 
-
-
-
 
 
 int crawlWeb ( const char* baseURL )
@@ -131,9 +177,6 @@ int crawlWeb ( const char* baseURL )
 
 
 
-
-
-
 Node makeHTTPRequest(CURL* curl, const char* baseURL)
 {
     // Node declaration
@@ -147,7 +190,7 @@ Node makeHTTPRequest(CURL* curl, const char* baseURL)
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&node);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 1000);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000);
 
 
     // Perform curl action
@@ -175,7 +218,7 @@ void parseHTML( char* HTML, const char* baseURL)
 
     // Get the root node and start traversing
     xmlNode* rootNode = xmlDocGetRootElement(doc);
-    trv_DOM_push_URL( rootNode, baseURL); // Traverse the entire DOM tree
+    dom_traversal_and_processing( rootNode, baseURL); // Traverse the entire DOM tree
 
     xmlFreeDoc(doc); // Free the document after use
 }
@@ -183,45 +226,137 @@ void parseHTML( char* HTML, const char* baseURL)
 
 
 // Recursive function to traverse nodes
-void trv_DOM_push_URL( xmlNode* node, const char* baseURL) 
+void dom_traversal_and_processing( xmlNode* node, const char* baseURL) 
 {
     for (; node; node = node->next) 
     {
         // Check if the node is an <a> tag
         if (xmlStrcasecmp(node->name, BAD_CAST "a") == 0) 
-        {
-            xmlChar* href = xmlGetProp(node, BAD_CAST "href");
-
-            if (href == nullptr) 
-                continue;
-            // Check if the href starts with '#' (fragment link)
-            if (strncmp((const char*)href, "#", 1) == 0) {
-                xmlFree(href);
-                continue;
-            }
-
-            char* resolvedURL = resolveURL(baseURL, (const char*)href);
-            if (resolvedURL != nullptr)
-            {
-                // Check if this URL has already been visited
-                string urlString(resolvedURL);
-                if  (visitedURLs.find(urlString) == visitedURLs.end() ) {
-                    cout << "Found URL: " << urlString << endl;
-                    visitedURLs.insert(urlString);  // Add to visited set
-                    urlQueue.push( urlString);
-                }
-
-                free(resolvedURL);
-            }
-            xmlFree(href);
+            handleURLDetection( node , baseURL); 
             
+
+        if ( xmlStrcasecmp(node->name , BAD_CAST "title") == 0 
+            || xmlStrcasecmp(node->name , BAD_CAST "h1") == 0
+            || xmlStrcasecmp(node->name , BAD_CAST "h2") == 0
+            || xmlStrcasecmp(node->name , BAD_CAST "h3") == 0
+            || xmlStrcasecmp(node->name , BAD_CAST "h4") == 0
+            || xmlStrcasecmp(node->name , BAD_CAST "h5") == 0
+            || xmlStrcasecmp(node->name , BAD_CAST "h6") == 0 )
+        {
+            handleKeyWordsDetection( node );
         }
         // Recursively traverse child nodes
-        trv_DOM_push_URL( node->children, baseURL);
+        dom_traversal_and_processing( node->children, baseURL);
     }
 }
 
 
+
+
+
+
+//FUNCTIONS TO PROCESS HTML CONTENT
+
+
+
+
+void handleURLDetection( xmlNode* node , const char* baseURL)
+{
+    xmlChar* href = xmlGetProp(node, BAD_CAST "href");
+
+    if (href == nullptr) 
+        return;
+    
+    // Check if the href starts with '#' (fragment link)
+    if (strncmp((const char*)href, "#", 1) == 0) 
+    {
+        xmlFree(href);
+        return;
+    }
+
+    char* resolvedURL = resolveURL(baseURL, (const char*)href);
+    if (resolvedURL != nullptr)
+    {
+        // CONVERT INTO SEPERATE FUNCTION 
+
+            // checking if url has valid scheme
+        if (strncmp(resolvedURL, "http://", 7) != 0 && strncmp(resolvedURL, "https://", 8) != 0) 
+        {
+            free(resolvedURL);
+            xmlFree(href);
+            return;
+        }
+
+        // Ensuring domain consistency
+        string tempUrlString(resolvedURL);  // THESE THREE ATTRIBUTES ARE USED LATER
+        size_t posDot1 = tempUrlString.find("//") + 2; // Find the start of the domain
+        size_t posDot2 = tempUrlString.find("/", posDot1); // Find the end of the domain part
+
+        if (posDot2 == string::npos) 
+            posDot2 = tempUrlString.length(); 
+        
+
+        // Convert the domain part to lowercase
+        for (int i = posDot1; i < posDot2; i++) {
+            tempUrlString[i] = tolower(tempUrlString[i]);
+        }
+
+        // Standardizing all URLs to "www" prefix
+        if (strncmp(tempUrlString.c_str(), "http://www.", 11) != 0 && strncmp(tempUrlString.c_str(), "https://www.", 12) != 0) 
+        {
+            tempUrlString = tempUrlString.substr(0, posDot1) + "www." + tempUrlString.substr(posDot1);
+        }
+
+        // removing traling slashes
+          if (tempUrlString[tempUrlString.length() - 1] == '/') 
+             tempUrlString = tempUrlString.substr(0, tempUrlString.length() - 1);  // Remove the last character
+    
+
+        // If you need to convert back to char* (if other parts of your code require it):
+        free(resolvedURL);  // Free the old resolvedURL memory if it was previously allocated
+        resolvedURL = strdup(tempUrlString.c_str());  // Allocate new memory for char* with the updated URL
+
+
+
+        // Check if this URL has already been visited
+        string urlString(resolvedURL);
+        if  (visitedURLs.find(urlString) == visitedURLs.end() ) 
+        {
+            cout << "Found URL: " << urlString << endl;
+            visitedURLs.insert(urlString);  // Add to visited set
+            urlQueue.push( urlString);
+        }
+
+        free(resolvedURL);
+    }
+    xmlFree(href);
+}
+
+vector<string> handleKeyWordsDetection( xmlNode* node)
+{
+    vector<string> keyWordsList;
+
+    xmlChar* rawText = xmlNodeGetContent(node);
+    if(rawText)
+    {
+        string rawTextString ( (char*) rawText );
+        keyWordsList = processKeyWords( rawTextString );
+        for (const auto& keyword : keyWordsList) 
+            cout << "Keyword: " << keyword << "  ";
+        xmlFree(rawText);
+    }
+
+    return keyWordsList;
+}
+
+
+
+
+
+
+
+
+// UTILITY FUNCTIONS 
 
 // funtion to get absoloute URL
 char* resolveURL(const char* baseURL, const char* relativeURL) 
@@ -270,6 +405,16 @@ string extractDomain(const string& url)  // "https://en.wikipedia.org/wiki/Main_
 
 
 
+
+
+
+
+
+
+
+
+
+
 // CALLBACK FUNCTION
 size_t storeHTML(void* packetContent, size_t size, size_t nmemb, void* node) 
 {
@@ -286,6 +431,21 @@ size_t storeHTML(void* packetContent, size_t size, size_t nmemb, void* node)
 
     return size * nmemb;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -367,4 +527,41 @@ bool isURLAllowed(const string currentURL , const unordered_set<string>& disallo
         }
     }
     return true;
+}
+
+
+
+
+//FUNCTIONS TO PROCESS KEYWORDS EXTRACTION
+
+
+vector<string> processKeyWords( string text)
+{
+    cout<< "Processing keyword from word stream";
+    vector<string> keywords;
+    py::gil_scoped_acquire acquire; 
+
+    stringstream ss(text);
+    string word;
+    while ( ss >> word )
+    {
+        word = regex_replace(word, regex("[^a-zA-Z]"), "");
+        
+        if (word.empty()) continue;
+
+        try 
+        {
+            py::object result = lemmatize_word(word);
+            if ( stopWords.find(result.cast<string>()) == stopWords.end() )
+            {
+                keywords.push_back( result.cast<string>());
+            }
+        }
+        catch( const py:: error_already_set & e )
+        {
+            cout << "Python error :" << e.what() << endl;
+        }   
+    }
+
+    return keywords;
 }
