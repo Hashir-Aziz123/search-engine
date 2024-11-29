@@ -1,0 +1,9 @@
+# Ignore compiled files
+*.o
+*.exe
+test1.cpp
+test2.cpp
+test3.cpp
+keywords_domain.json
+keywords_domain2.json
+outgoingLinks.json

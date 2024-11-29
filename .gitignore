@@ -1,6 +1,0 @@
-# Ignore compiled files
-*.o
-*.exe
-test1.cpp
-test2.cpp
-test3.cpp
