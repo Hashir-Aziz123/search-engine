@@ -63,27 +63,29 @@ struct Node {
 size_t storeHTML(void *packetContent, size_t size, size_t nmemb, void* node); // callback function
 
 // FUNCTIONS TO CRAWL WEBPAGES AND PARSE HTML 
-int crawlWeb ( const char* baseURL ); 
+int crawlWeb (const char* baseURL ); 
 char* resolveURL(const char* baseURL, const char* relativeURL);
 Node makeHTTPRequest(CURL* curl, const char* baseURL);
 void parseHTML(char* HTML, const char* baseURL, const string& currentURL);
-void dom_traversal_and_processing(xmlNode* node, const char* baseURL , const string& currentURL,  char* HTML_Content);
+void dom_traversal_and_processing(xmlNode* node, const char* baseURL , const string& currentURL,  char* HTML_Content, unsigned int *totalWords);
+void keywordCountDOMTraversal(xmlNode *node, const char *baseURL, const string& currentURL, char* HTML_CONTENT, unsigned int *totalWords);
 string extractDomain(const string& url);
 
-
 //FUNCTIONS TO PROCESS HTML CONTENT
-void handleKeyWordsDetection( xmlNode* node, const string& currentURL , char* HTML_Content);
-void handleURLDetection( xmlNode* node , const char* baseURL , const string& currentURL);
-int getKeywordCount(string keyword , char* HTML_Content);
+void handleKeyWordsDetection(xmlNode* node, const string& currentURL, char* HTML_Content, unsigned int *totalWords);
+void handleURLDetection(xmlNode* node, const char* baseURL, const string& currentURL);
+int getKeywordCount(string keyword, char* HTML_Content);
 
 // FUNCTIONS TO CHECK ROBOT.TXT COMPLIANCE
-Node fetchRobotsTxt ( CURL* curl , const char* baseURL );
-unordered_set<string> parseRobotsTxt ( char* robotsTxtContent);
-bool isURLAllowed( const string currentURL , const unordered_set<string>& disallowedPath );
+Node fetchRobotsTxt (CURL* curl, const char* baseURL);
+unordered_set<string> parseRobotsTxt (char* robotsTxtContent);
+bool isURLAllowed(const string currentURL, const unordered_set<string>& disallowedPath);
 
 //FUNCTIONS TO PROCESS KEYWORDS EXTRACTION
 vector<string> processKeyWords(string text);
-void handleURLDetection( xmlNode* node , const char* baseURL);
+void handleURLDetection(xmlNode* node, const char* baseURL);
+void getTotalWordCount(xmlNode *node, unsigned int *totalWords);
+unsigned int countWords(const string &text);
 
 //removes duplicate URLs from output
 void removeDuplicates(json& j);
@@ -99,7 +101,7 @@ py::object lemmatize_word = lemmatizer.attr("lemmatize_word");
 int main() 
 {
     // Initialize curl and base baseURL
-    const char* baseURL = "https://alltop.com/";
+    const char* baseURL = "https://alltop.com";
     crawlWeb (baseURL);
   
     return EXIT_SUCCESS;
@@ -155,7 +157,7 @@ int crawlWeb ( const char* baseURL )
                 disallowedPaths = parseRobotsTxt( newRobotTxtNode.packetHTML );
                 free( newRobotTxtNode.packetHTML );
             }
-            else 
+            else
             {
                 // Clear disallowed paths if no robots.txt found
                 disallowedPaths.clear();
@@ -175,7 +177,8 @@ int crawlWeb ( const char* baseURL )
 
             // Creating the reverse indexing hashmap
 
-            ofstream outFile("/home/lbp400/DSAProject/jsonFiles/keywords_domains2.json");
+            ///home/ret2bounty/DSA_Project_Web_Crawler/
+            ofstream outFile("../jsonFiles/keywords_domains2.json");
             if (!outFile) {
                 cerr << "Failed to open output file" << endl;
                 return 1;
@@ -185,7 +188,7 @@ int crawlWeb ( const char* baseURL )
             outFile.close();
 
             // Creating the url to outgoing links hashmap
-            ofstream outFile2("/home/lbp400/DSAProject/jsonFiles/outgoingLinks.json");
+            ofstream outFile2("../jsonFiles/outgoingLinks.json");
             if (!outFile2) {
                 cerr << "Failed to open output2 file" << endl;
                 return 1;
@@ -247,15 +250,17 @@ void parseHTML(char* HTML, const char* baseURL, const string& currentURL) {
     }
 
     xmlNode* rootNode = xmlDocGetRootElement(doc);
-    dom_traversal_and_processing(rootNode, baseURL, currentURL , HTML);
+    unsigned int totalWords = 0;
+    keywordCountDOMTraversal(rootNode, baseURL, currentURL, HTML, &totalWords);
+    dom_traversal_and_processing(rootNode, baseURL, currentURL, HTML, &totalWords);
 
     xmlFreeDoc(doc);
 }
 
-void dom_traversal_and_processing(xmlNode* node, const char* baseURL, const string& currentURL , char* HTML_CONTENT) {
+void dom_traversal_and_processing(xmlNode* node, const char* baseURL, const string& currentURL, char* HTML_CONTENT, unsigned int *totalWords) {
     for (; node; node = node->next) {
         if (xmlStrcasecmp(node->name, BAD_CAST "a") == 0)
-            handleURLDetection(node, baseURL , currentURL);
+            handleURLDetection(node, baseURL, currentURL);
 
         if (xmlStrcasecmp(node->name, BAD_CAST "title") == 0 || 
             xmlStrcasecmp(node->name, BAD_CAST "h1") == 0 ||
@@ -264,14 +269,29 @@ void dom_traversal_and_processing(xmlNode* node, const char* baseURL, const stri
             xmlStrcasecmp(node->name, BAD_CAST "h4") == 0 ||
             xmlStrcasecmp(node->name, BAD_CAST "h5") == 0 ||
             xmlStrcasecmp(node->name, BAD_CAST "h6") == 0) {
-            handleKeyWordsDetection(node, currentURL , HTML_CONTENT);
+            handleKeyWordsDetection(node, currentURL, HTML_CONTENT, totalWords);
         }
 
-        dom_traversal_and_processing(node->children, baseURL, currentURL , HTML_CONTENT);
+        dom_traversal_and_processing(node->children, baseURL, currentURL, HTML_CONTENT, totalWords);
     }
 }
 
+void keywordCountDOMTraversal(xmlNode *node, const char *baseURL, const string& currentURL, char* HTML_CONTENT, unsigned int *totalWords) {
+    for (; node; node = node->next) {
+        if (xmlStrcasecmp(node->name, BAD_CAST "title") == 0 || 
+            xmlStrcasecmp(node->name, BAD_CAST "h1") == 0 ||
+            xmlStrcasecmp(node->name, BAD_CAST "h2") == 0 || 
+            xmlStrcasecmp(node->name, BAD_CAST "h3") == 0 ||
+            xmlStrcasecmp(node->name, BAD_CAST "h4") == 0 ||
+            xmlStrcasecmp(node->name, BAD_CAST "h5") == 0 ||
+            xmlStrcasecmp(node->name, BAD_CAST "h6") == 0 ||
+            xmlStrcasecmp(node->name, BAD_CAST "p")) {
+            getTotalWordCount(node, totalWords);
+        }
 
+        keywordCountDOMTraversal(node->children, baseURL, currentURL, HTML_CONTENT, totalWords);
+    }
+}
 
 //FUNCTIONS TO PROCESS HTML CONTENT
 
@@ -352,7 +372,7 @@ void handleURLDetection( xmlNode* node , const char* baseURL , const string& cur
     xmlFree(href);
 }
 
-void handleKeyWordsDetection(xmlNode* node, const string& currentURL , char* HTML_CONTENT) {
+void handleKeyWordsDetection(xmlNode* node, const string& currentURL , char* HTML_CONTENT, unsigned int *totalWords) {
     map<string, int> keywordsCount;
     vector<string> keyWordsList;
 
@@ -366,7 +386,7 @@ void handleKeyWordsDetection(xmlNode* node, const string& currentURL , char* HTM
 
         for (const auto& [keyword, count] : keywordsCount) {
             if (count > 0) {
-                keyword_to_url_hashmap[keyword].push_back({{currentURL, count}});
+                keyword_to_url_hashmap[keyword].push_back({{currentURL, ((float)count / *totalWords)}});
             }
         }
 
@@ -377,7 +397,7 @@ void handleKeyWordsDetection(xmlNode* node, const string& currentURL , char* HTM
 void removeDuplicates(json& j) {
     for (auto& [key, value] : j.items()) {
         if (value.is_array()) {
-            std::set<json> unique_values(value.begin(), value.end());
+            set<json> unique_values(value.begin(), value.end());
             value = json::array(); // Clear the current array
             for (const auto& unique_val : unique_values) {
                 value.push_back(unique_val); // Add back unique values
@@ -387,7 +407,6 @@ void removeDuplicates(json& j) {
 }
 
 int getKeywordCount(string keyword , char* HTML_Content) {
-    
     int count = 0;
     const string content(HTML_Content);
     size_t pos = content.find(keyword);
@@ -398,6 +417,24 @@ int getKeywordCount(string keyword , char* HTML_Content) {
     }
 
     return count;
+}
+
+unsigned int countWords(const string &text) {
+    istringstream stream(text);
+    return distance(istream_iterator<string>(stream), istream_iterator<string>());
+}
+
+void getTotalWordCount(xmlNode *node, unsigned int *totalWords) {
+    if (!node || !totalWords) {
+        return;
+    }
+
+    for (xmlNode *current = node; current; current = current->next) {
+        if (current->type == XML_TEXT_NODE) {
+            string text(reinterpret_cast<const char *>(current->content));
+            *totalWords += countWords(text);
+        }
+    }
 }
 
 
@@ -422,7 +459,7 @@ char* resolveURL(const char* baseURL, const char* relativeURL)
     return result;
 }
 
-string extractDomain(const string& url)  // "https://en.wikipedia.org/wiki/Main_Page"
+string extractDomain(const string& url)
 {
     size_t protocolPos = url.find("://");
     size_t domainStart = (protocolPos == string::npos) ? 0 : protocolPos + 3;
