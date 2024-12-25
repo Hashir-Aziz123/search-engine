@@ -1,0 +1,146 @@
+{
+    "alltop": [
+        {
+            "tfidf": 44.0,
+            "url": "https://alltop.com/"
+        }
+    ],
+    "announcement": [
+        {
+            "tfidf": 1.0,
+            "url": "https://alltop.com/"
+        }
+    ],
+    "create": [
+        {
+            "tfidf": 4.0,
+            "url": "https://alltop.com/"
+        }
+    ],
+    "customized": [
+        {
+            "tfidf": 1.0,
+            "url": "https://alltop.com/"
+        }
+    ],
+    "document": [
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/doj-tells-google-to-sell-chrome"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/how-a-digital-you-can-sit-through-your-agonizing-web-conference-calls"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/meet-three-incoming-eu-lawmakers-in-charge-of-key-tech-policy-areas"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/tesla-says-it-has-reached-a-conditional-settlement-in-rivian-trade-secrets-lawsuit"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/the-rise-and-fall-of-the-scattered-spider-hackers"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/trumps-tariff-threats-dont-scare-this-mexican-fintech"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/wolfs-sequel-canceled-because-director-no-longer-trusted-apple"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/24/the-curious-case-of-nebius-the-publicly-traded-ai-infrastructure-startup"
+        }
+    ],
+    "feed": [
+        {
+            "tfidf": 31.0,
+            "url": "https://alltop.com/"
+        }
+    ],
+    "move": [
+        {
+            "tfidf": 2.0,
+            "url": "http://www.mashable.com"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/doj-tells-google-to-sell-chrome"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/how-a-digital-you-can-sit-through-your-agonizing-web-conference-calls"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/meet-three-incoming-eu-lawmakers-in-charge-of-key-tech-policy-areas"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/tesla-says-it-has-reached-a-conditional-settlement-in-rivian-trade-secrets-lawsuit"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/the-rise-and-fall-of-the-scattered-spider-hackers"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/trumps-tariff-threats-dont-scare-this-mexican-fintech"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/23/wolfs-sequel-canceled-because-director-no-longer-trusted-apple"
+        },
+        {
+            "tfidf": 3.0,
+            "url": "https://www.techcrunch.com/2024/11/24/the-curious-case-of-nebius-the-publicly-traded-ai-infrastructure-startup"
+        }
+    ],
+    "news": [
+        {
+            "tfidf": 106.0,
+            "url": "https://alltop.com/"
+        }
+    ],
+    "page": [
+        {
+            "tfidf": 6.0,
+            "url": "https://alltop.com/"
+        }
+    ],
+    "permanently": [
+        {
+            "tfidf": 2.0,
+            "url": "http://www.mashable.com"
+        }
+    ],
+    "popular": [
+        {
+            "tfidf": 4.0,
+            "url": "https://alltop.com/"
+        }
+    ],
+    "rss": [
+        {
+            "tfidf": 5.0,
+            "url": "https://alltop.com/"
+        }
+    ],
+    "site": [
+        {
+            "tfidf": 7.0,
+            "url": "https://alltop.com/"
+        }
+    ],
+    "topic": [
+        {
+            "tfidf": 6.0,
+            "url": "https://alltop.com/"
+        }
+    ]
+}

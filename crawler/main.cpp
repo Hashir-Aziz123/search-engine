@@ -10,6 +10,7 @@
 #include <map>
 #include <queue>
 #include <set>
+#include "structures/hashmap.hpp"
 
 #include <curl/curl.h>
 #include <libxml/HTMLparser.h>
@@ -20,19 +21,32 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 
+#include <list>
+#include <utility>
+#include <functional>
+
+//for multithreading
+#include <future>
+#include <chrono>
+#include <thread>
+
+
 using namespace std;
 namespace py = pybind11;
 using json = nlohmann::json;
 
 //Global queue and unordered set for bfs web crawling
 unordered_set<string> visitedURLs;
-queue<string> urlQueue;
+//queue<string> urlQueue;
 
 //Keyword map
 json keyword_to_url_hashmap;
 json url_to_outgoingLinks_hashmap;
 
-
+//mutexes
+std::mutex visitedMutex;
+std::mutex hashmapMutex;
+std::mutex outgoingLinksMutex;
 
 //Stop words to contain
 const unordered_set<string> stopWords = {
@@ -56,24 +70,23 @@ struct Node {
     int packetSize;
 };
 
-
 // Function declarations
 
 // CALL BACK FUNCTION TO STORE HTML
 size_t storeHTML(void *packetContent, size_t size, size_t nmemb, void* node); // callback function
 
 // FUNCTIONS TO CRAWL WEBPAGES AND PARSE HTML 
-int crawlWeb (const char* baseURL ); 
+void crawlWeb (const char* baseURL ); 
 char* resolveURL(const char* baseURL, const char* relativeURL);
 Node makeHTTPRequest(CURL* curl, const char* baseURL);
-void parseHTML(char* HTML, const char* baseURL, const string& currentURL);
-void dom_traversal_and_processing(xmlNode* node, const char* baseURL , const string& currentURL,  char* HTML_Content, unsigned int *totalWords);
+void parseHTML(char* HTML, const char* baseURL, const string& currentURL, queue<string>& urlQueue);
+void dom_traversal_and_processing(xmlNode* node, const char* baseURL , const string& currentURL,  char* HTML_Content, unsigned int *totalWords, queue<string>& urlQueue);
 void keywordCountDOMTraversal(xmlNode *node, const char *baseURL, const string& currentURL, char* HTML_CONTENT, unsigned int *totalWords);
 string extractDomain(const string& url);
 
 //FUNCTIONS TO PROCESS HTML CONTENT
 void handleKeyWordsDetection(xmlNode* node, const string& currentURL, char* HTML_Content, unsigned int *totalWords);
-void handleURLDetection(xmlNode* node, const char* baseURL, const string& currentURL);
+void handleURLDetection(xmlNode* node, const char* baseURL, const string& currentURL, queue<string>& urlQueue);
 int getKeywordCount(string keyword, char* HTML_Content);
 
 // FUNCTIONS TO CHECK ROBOT.TXT COMPLIANCE
@@ -83,43 +96,72 @@ bool isURLAllowed(const string currentURL, const unordered_set<string>& disallow
 
 //FUNCTIONS TO PROCESS KEYWORDS EXTRACTION
 vector<string> processKeyWords(string text);
-void handleURLDetection(xmlNode* node, const char* baseURL);
+//void handleURLDetection(xmlNode* node, const char* baseURL);
 void getTotalWordCount(xmlNode *node, unsigned int *totalWords);
 unsigned int countWords(const string &text);
 
 //removes duplicate URLs from output
 void removeDuplicates(json& j);
 
-py::scoped_interpreter guard{}; 
+py::scoped_interpreter guard{};
 
 py:: module lemmatizer = py::module::import("lemmatizer");
 py::object lemmatize_word = lemmatizer.attr("lemmatize_word");
 
+//maximum number of websites each thread will crawl
+#define MAX_SITES 10
 
-
-
-int main() 
+int main()
 {
-    // Initialize curl and base baseURL
-    const char* baseURL = "https://alltop.com";
-    crawlWeb (baseURL);
+    py::gil_scoped_release release;
+
+    vector<future<void>> futures;
+    //A new thread is created for each URL in this vector
+    vector<const char*> urls = {"https://wikipedia.org", "https://alltop.com"};
+    for (const auto &url : urls) {
+        futures.push_back(async(launch::async, crawlWeb, url));
+    }
+
+    for (auto &f : futures) f.get();
+
+    py::gil_scoped_acquire acquire;
+
+    ofstream outFile("../jsonFiles/keywords_domains2.json");
+    if (!outFile) {
+        cerr << "Failed to open output file" << endl;
+        return EXIT_FAILURE;
+    }
+    removeDuplicates(keyword_to_url_hashmap);
+    outFile << keyword_to_url_hashmap.dump(4); // prints to the file with indentation 4
+    outFile.close();
+
+    //Creating the url to outgoing links hashmap
+    ofstream outFile2("../jsonFiles/outgoingLinks.json");
+    if (!outFile2) {
+        cerr << "Failed to open output2 file" << endl;
+        return EXIT_FAILURE;
+    }
+    outFile2 << url_to_outgoingLinks_hashmap.dump(4);
+    outFile2.close();
   
     return EXIT_SUCCESS;
 }
 
 
 
-
 // FUNCTIONS TO CRAWL WEBPAGES AND PARSE HTML 
 
-int crawlWeb ( const char* baseURL )
+void crawlWeb(const char* baseURL)
 {
+    queue<string> urlQueue;
+    unsigned int sites = MAX_SITES;
+
     CURL* curl;
     curl = curl_easy_init();
     if (curl == nullptr) 
     {
         cout << "Failed to initialize curl" << endl;
-        return EXIT_FAILURE;
+        return;
     }
 
     // keep current domain
@@ -136,11 +178,15 @@ int crawlWeb ( const char* baseURL )
 
     // Enqueue the base URL and mark it as visited
     urlQueue.push(baseURL);
+
+    visitedMutex.lock();
     visitedURLs.insert(baseURL); 
+    visitedMutex.unlock();
 
     // Making request
-    while ( !urlQueue.empty() )
+    while (sites > 0 && !urlQueue.empty())
     {
+        sites--;
         const string currentURL = urlQueue.front();
         urlQueue.pop();
 
@@ -151,11 +197,11 @@ int crawlWeb ( const char* baseURL )
             currentDomain = newDomain;
 
             // Fetch and check the robots.txt for the new domain
-            Node newRobotTxtNode = fetchRobotsTxt( curl , currentDomain.c_str() );
+            Node newRobotTxtNode = fetchRobotsTxt(curl, currentDomain.c_str());
             if (newRobotTxtNode.packetSize != -1)
             {
-                disallowedPaths = parseRobotsTxt( newRobotTxtNode.packetHTML );
-                free( newRobotTxtNode.packetHTML );
+                disallowedPaths = parseRobotsTxt(newRobotTxtNode.packetHTML);
+                free(newRobotTxtNode.packetHTML);
             }
             else
             {
@@ -170,39 +216,16 @@ int crawlWeb ( const char* baseURL )
             continue;
         }
 
-        Node node = makeHTTPRequest(curl, currentURL.c_str() );
+        Node node = makeHTTPRequest(curl, currentURL.c_str());
         // Parse the HTML
         if ( node.packetSize != -1) {
-            parseHTML(node.packetHTML, newDomain.c_str(), currentURL);
-
-            // Creating the reverse indexing hashmap
-
-            ///home/ret2bounty/DSA_Project_Web_Crawler/
-            ofstream outFile("../jsonFiles/keywords_domains2.json");
-            if (!outFile) {
-                cerr << "Failed to open output file" << endl;
-                return 1;
-            }
-            removeDuplicates(keyword_to_url_hashmap);
-            outFile << keyword_to_url_hashmap.dump(4); // prints to the file with indentation 4
-            outFile.close();
-
-            // Creating the url to outgoing links hashmap
-            ofstream outFile2("../jsonFiles/outgoingLinks.json");
-            if (!outFile2) {
-                cerr << "Failed to open output2 file" << endl;
-                return 1;
-            }
-            outFile2 << url_to_outgoingLinks_hashmap.dump(4);
-            outFile2.close();
-
+            parseHTML(node.packetHTML, newDomain.c_str(), currentURL, urlQueue);
         }
         free(node.packetHTML); // Free the memory after parsing
     }
 
     // Perform curl cleanup
     curl_easy_cleanup(curl);
-    return EXIT_SUCCESS;
 }
 
 
@@ -242,7 +265,7 @@ Node makeHTTPRequest(CURL* curl, const char* baseURL)
 }
 
 
-void parseHTML(char* HTML, const char* baseURL, const string& currentURL) {
+void parseHTML(char* HTML, const char* baseURL, const string& currentURL, queue<string>& urlQueue) {
     htmlDocPtr doc = htmlReadMemory(HTML, strlen(HTML), baseURL, NULL, HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING);
     if (doc == NULL) {
         cout << "Parsing failed. Exiting function" << endl;
@@ -252,15 +275,15 @@ void parseHTML(char* HTML, const char* baseURL, const string& currentURL) {
     xmlNode* rootNode = xmlDocGetRootElement(doc);
     unsigned int totalWords = 0;
     keywordCountDOMTraversal(rootNode, baseURL, currentURL, HTML, &totalWords);
-    dom_traversal_and_processing(rootNode, baseURL, currentURL, HTML, &totalWords);
+    dom_traversal_and_processing(rootNode, baseURL, currentURL, HTML, &totalWords, urlQueue);
 
     xmlFreeDoc(doc);
 }
 
-void dom_traversal_and_processing(xmlNode* node, const char* baseURL, const string& currentURL, char* HTML_CONTENT, unsigned int *totalWords) {
+void dom_traversal_and_processing(xmlNode* node, const char* baseURL, const string& currentURL, char* HTML_CONTENT, unsigned int *totalWords, queue<string>& urlQueue) {
     for (; node; node = node->next) {
         if (xmlStrcasecmp(node->name, BAD_CAST "a") == 0)
-            handleURLDetection(node, baseURL, currentURL);
+            handleURLDetection(node, baseURL, currentURL, urlQueue);
 
         if (xmlStrcasecmp(node->name, BAD_CAST "title") == 0 || 
             xmlStrcasecmp(node->name, BAD_CAST "h1") == 0 ||
@@ -272,7 +295,7 @@ void dom_traversal_and_processing(xmlNode* node, const char* baseURL, const stri
             handleKeyWordsDetection(node, currentURL, HTML_CONTENT, totalWords);
         }
 
-        dom_traversal_and_processing(node->children, baseURL, currentURL, HTML_CONTENT, totalWords);
+        dom_traversal_and_processing(node->children, baseURL, currentURL, HTML_CONTENT, totalWords, urlQueue);
     }
 }
 
@@ -293,12 +316,12 @@ void keywordCountDOMTraversal(xmlNode *node, const char *baseURL, const string& 
     }
 }
 
+
+
+
 //FUNCTIONS TO PROCESS HTML CONTENT
 
-
-
-
-void handleURLDetection( xmlNode* node , const char* baseURL , const string& currentURL )
+void handleURLDetection(xmlNode* node , const char* baseURL , const string& currentURL, queue<string>& urlQueue)
 {
     xmlChar* href = xmlGetProp(node, BAD_CAST "href");
 
@@ -358,14 +381,20 @@ void handleURLDetection( xmlNode* node , const char* baseURL , const string& cur
 
         // Check if this URL has already been visited
         string urlString(resolvedURL);
-        if  (visitedURLs.find(urlString) == visitedURLs.end()) 
+        visitedMutex.lock();
+        if (visitedURLs.find(urlString) == visitedURLs.end()) 
         {
             cout << "Found URL: " << urlString << endl;
             visitedURLs.insert(urlString);  // Add to visited set
-            urlQueue.push( urlString);
+            visitedMutex.unlock();
+
+            urlQueue.push(urlString);
             
+            outgoingLinksMutex.lock();
             url_to_outgoingLinks_hashmap[currentURL].push_back(resolvedURL);
+            outgoingLinksMutex.unlock();
         }
+        else visitedMutex.unlock();
 
         free(resolvedURL);
     }
@@ -373,7 +402,7 @@ void handleURLDetection( xmlNode* node , const char* baseURL , const string& cur
 }
 
 void handleKeyWordsDetection(xmlNode* node, const string& currentURL , char* HTML_CONTENT, unsigned int *totalWords) {
-    map<string, int> keywordsCount;
+    HashMap<string, int> keywordsCount;
     vector<string> keyWordsList;
 
     xmlChar* rawText = xmlNodeGetContent(node);
@@ -386,7 +415,9 @@ void handleKeyWordsDetection(xmlNode* node, const string& currentURL , char* HTM
 
         for (const auto& [keyword, count] : keywordsCount) {
             if (count > 0) {
+                hashmapMutex.lock();
                 keyword_to_url_hashmap[keyword].push_back({{currentURL, ((float)count / *totalWords)}});
+                hashmapMutex.unlock();
             }
         }
 
@@ -436,7 +467,6 @@ void getTotalWordCount(xmlNode *node, unsigned int *totalWords) {
         }
     }
 }
-
 
 // UTILITY FUNCTIONS 
 
@@ -618,7 +648,7 @@ vector<string> processKeyWords( string text)
         catch( const py:: error_already_set & e )
         {
             cout << "Python error :" << e.what() << endl;
-        }   
+        }
     }
 
     return keywords;

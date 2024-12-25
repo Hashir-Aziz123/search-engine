@@ -5,7 +5,6 @@
 #include <cmath>
 #include <fstream>
 #include <omp.h>
-
 #include <nlohmann/json.hpp>
 
 using namespace std;
@@ -56,7 +55,7 @@ int main() {
 void fileReadkeyWords_Urls(  unordered_map<string , vector< pair<string,double> > > &keyWords_Urls )
 {
     json tempJson;
-    ifstream inputFile("/home/lbp400/DSAProject/jsonFiles/keywords_domains.json");
+    ifstream inputFile("../jsonFiles/keywords_domains.json");
     if( !inputFile.is_open())
     {
         cerr << "Error: Could not open the file: " << "keywords_domains2" ;
@@ -78,7 +77,7 @@ void fileReadkeyWords_Urls(  unordered_map<string , vector< pair<string,double> 
 void fileReadUrl_OutgoingLinks(  unordered_map<string , vector<string> > &url_OutgoingLinks )
 {
     json tempJson;
-    ifstream inputFile("/home/lbp400/DSAProject/jsonFiles/outgoingLinks.json");
+    ifstream inputFile("../jsonFiles/outgoingLinks.json");
     if( !inputFile.is_open())
     {
         cerr << "Error: Could not open the file: " << "outgoingLinks2" ;
@@ -195,7 +194,7 @@ void calculateFinalPageRanks(unordered_map<string, pair<double, vector<string>>>
 }
 
 
-void writeTFIDFToFile(const unordered_map<string, vector<pair<string, double>>>& keyWords_Urls) 
+void writeTFIDFToFile(const unordered_map<string, vector<pair<string, double>>>& keyWords_Urls)
 {
     json tfidfJson;
 
@@ -214,7 +213,7 @@ void writeTFIDFToFile(const unordered_map<string, vector<pair<string, double>>>&
     }
 
     // Write to file
-    ofstream outputFile("/home/lbp400/DSAProject/jsonFiles/tfidf_output.json");
+    ofstream outputFile("../jsonFiles/tfidf_output.json");
     if (!outputFile.is_open()) {
         cerr << "Error: Could not open the file to write TF-IDF data." << endl;
         return;
@@ -236,7 +235,7 @@ void writePageRankToFile(const unordered_map<string, pair<double, vector<string>
     }
 
     // Write to file
-    ofstream outputFile("/home/lbp400/DSAProject/jsonFiles/pagerank_output.json");
+    ofstream outputFile("../jsonFiles/pagerank_output.json");
     if (!outputFile.is_open()) {
         cerr << "Error: Could not open the file to write PageRank data." << endl;
         return;
