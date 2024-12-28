@@ -11,22 +11,21 @@ using namespace std;
 using json = nlohmann::json;
 
 // Function Prototypes
-void fileReadkeyWords_Urls(unordered_map<string, vector<pair<string, double>>>& keyWords_Urls);
 void fileReadUrl_OutgoingLinks(unordered_map<string, vector<string>>& url_OutgoingLinks);
-void TF_IDFcalculation(unordered_map<string, vector<pair<string, double>>>& keyWords_Urls);
-unordered_map<string, vector<string>> creatingInboundLinksMapping( unordered_map<string, vector<string>> url_OutgoingLinks);
-
-unordered_map<string, pair<double, vector<string>>> initializePageRank(const unordered_map<string, vector<string>> url_OutgoingLinks);
-double getPageRankContributionFromPages( unordered_map<string, pair<double, vector<string>>> outboundLinksWithPageRank,  unordered_map<string, vector<string>> inboundLinks_URL, string url);
-void calculateFinalPageRanks(unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank, unordered_map<string, vector<string>> inboundLinks_URL);
-
+unordered_map<string, vector<string>> creatingInboundLinksMapping(const unordered_map<string, vector<string>>& url_OutgoingLinks);
+unordered_map<string, pair<double, vector<string>>> initializePageRank(const unordered_map<string, vector<string>>& url_OutgoingLinks);
+double getPageRankContributionFromPages(const unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const unordered_map<string, vector<string>>& inboundLinks_URL, const string& url);
+void calculateFinalPageRanks(unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const unordered_map<string, vector<string>>& inboundLinks_URL);
 void writePageRankToFile(const unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank);
+
+void fileReadkeyWords_Urls(unordered_map<string, vector<pair<string, double>>>& keyWords_Urls);
+void TF_IDFcalculation(unordered_map<string, vector<pair<string, double>>>& keyWords_Urls);
 void writeTFIDFToFile(const unordered_map<string, vector<pair<string, double>>>& keyWords_Urls);
 
 // Main Function
 int main() {
     // Initializing data structures
-    cout<< "running" << endl;
+    cout << "running" << endl;
     unordered_map<string, vector<pair<string, double>>> keyWords_Urls;
     unordered_map<string, vector<string>> url_OutgoingLinks;
 
@@ -52,13 +51,145 @@ int main() {
     return 0;
 }
 
-void fileReadkeyWords_Urls(  unordered_map<string , vector< pair<string,double> > > &keyWords_Urls )
+void fileReadUrl_OutgoingLinks(unordered_map<string, vector<string>>& url_OutgoingLinks) {
+    json tempJson;
+    ifstream inputFile("../jsonFiles/outgoingLinks.json");
+    if (!inputFile.is_open()) {
+        cerr << "Error: Could not open the file: " << "outgoingLinks.json" << endl;
+        return;
+    }
+
+    inputFile >> tempJson;
+
+    for (const auto& [key, value] : tempJson.items()) {
+        if (value.is_array()) {
+            for (const auto& outgoingUrl : value) {
+                url_OutgoingLinks[key].emplace_back(outgoingUrl.get<string>());
+                // Ensure all URLs are included
+                if (url_OutgoingLinks.find(outgoingUrl) == url_OutgoingLinks.end()) {
+                    url_OutgoingLinks[outgoingUrl] = {};
+                }
+            }
+        }
+        // Ensure all URLs are included
+        if (url_OutgoingLinks.find(key) == url_OutgoingLinks.end()) {
+            url_OutgoingLinks[key] = {};
+        }
+    }
+}
+
+unordered_map<string, vector<string>> creatingInboundLinksMapping(const unordered_map<string, vector<string>>& url_OutgoingLinks) {
+    unordered_map<string, vector<string>> inboundLinks_URL;
+
+    // Traverse the outgoing links unordered_map
+    #pragma omp parallel for
+    for (const auto& [sourceUrl, outgoingUrls] : url_OutgoingLinks) {
+        for (const auto& targetUrl : outgoingUrls) {
+            // Add the source URL as an inbound link for the target URL
+            inboundLinks_URL[targetUrl].push_back(sourceUrl);
+        }
+    }
+
+    return inboundLinks_URL;
+}
+
+unordered_map<string, pair<double, vector<string>>> initializePageRank(const unordered_map<string, vector<string>>& url_OutgoingLinks) {
+    unordered_map<string, pair<double, vector<string>>> pageRankMap;
+    size_t numberOfDocs = url_OutgoingLinks.size();
+    double initialPageRank = 1.0 / numberOfDocs;
+
+    for (const auto& entry : url_OutgoingLinks) {
+        const string& url = entry.first;
+        pageRankMap[url] = {initialPageRank, entry.second};  // Initialize PageRank and outbound links
+    }
+
+    return pageRankMap;
+}
+
+double getPageRankContributionFromPages(const unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const unordered_map<string, vector<string>>& inboundLinks_URL, const string& url) {
+    double contribution = 0.0;
+
+    // Check if the URL exists in the inboundLinks_URL map
+    if (inboundLinks_URL.find(url) != inboundLinks_URL.end()) {
+        vector<string> inboundUrls = inboundLinks_URL.at(url);
+
+        for (const string& incomingUrl : inboundUrls) {
+            const auto& [pageRank, outboundLinks] = outboundLinksWithPageRank.at(incomingUrl);
+            if (!outboundLinks.empty()) {
+                contribution += pageRank / outboundLinks.size();  // Contribution from each inbound link
+            }
+        }
+    }
+
+    return contribution;
+}
+
+void calculateFinalPageRanks(unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const unordered_map<string, vector<string>>& inboundLinks_URL) {
+    const double errorMargin = 0.0001;
+    const double dampingFactor = 0.85;
+    double noOfPages = outboundLinksWithPageRank.size();
+    double teleportationProb = (1 - dampingFactor) / noOfPages;
+    double error;
+
+    do {
+        error = 0.0;  // Reset error for this iteration
+        unordered_map<string, double> newPageRanks;
+        double sinkPageRank = 0.0;
+
+        #pragma omp parallel for reduction(+:sinkPageRank)
+        for (const auto& [url, data] : outboundLinksWithPageRank) {
+            const auto& [currentPageRank, outboundLinks] = data;
+            if (outboundLinks.empty()) {
+                sinkPageRank += currentPageRank;
+            }
+        }
+
+        #pragma omp parallel for reduction(+:error)
+        for (auto& [url, data] : outboundLinksWithPageRank) {
+            auto& [currentPageRank, outboundLinks] = data;
+
+            double newPageRank = teleportationProb + dampingFactor * (sinkPageRank / noOfPages + getPageRankContributionFromPages(outboundLinksWithPageRank, inboundLinks_URL, url));
+
+            error += abs(newPageRank - currentPageRank);
+            newPageRanks[url] = newPageRank;
+        }
+
+        // Update the PageRanks
+        for (auto& [url, data] : outboundLinksWithPageRank) {
+            data.first = newPageRanks[url];
+        }
+
+    } while (error > errorMargin);
+}
+
+void writePageRankToFile(const unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank) {
+    json pageRankJson;
+
+    for (const auto& entry : outboundLinksWithPageRank) {
+        string url = entry.first;
+        double pageRank = entry.second.first;
+
+        pageRankJson[url] = pageRank;
+    }
+
+    // Write to file
+    ofstream outputFile("../jsonFiles/pagerank_output.json");
+    if (!outputFile.is_open()) {
+        cerr << "Error: Could not open the file to write PageRank data." << endl;
+        return;
+    }
+
+    outputFile << pageRankJson.dump(4);  // Dump the JSON with indentation of 4 spaces
+    outputFile.close();
+}
+
+void fileReadkeyWords_Urls(unordered_map<string, vector<pair<string,double>>> &keyWords_Urls)
 {
     json tempJson;
     ifstream inputFile("../jsonFiles/keywords_domains.json");
     if( !inputFile.is_open())
     {
-        cerr << "Error: Could not open the file: " << "keywords_domains2" ;
+        cerr << "Error: Could not open the file keywords_domains.json";
         return;
     }
 
@@ -71,26 +202,6 @@ void fileReadkeyWords_Urls(  unordered_map<string , vector< pair<string,double> 
                     for (const auto& [url, count] : obj.items()) 
                         if (count.is_number()) 
                             keyWords_Urls[key].emplace_back(url, count.get<double>());
-
-}
-
-void fileReadUrl_OutgoingLinks(  unordered_map<string , vector<string> > &url_OutgoingLinks )
-{
-    json tempJson;
-    ifstream inputFile("../jsonFiles/outgoingLinks.json");
-    if( !inputFile.is_open())
-    {
-        cerr << "Error: Could not open the file: " << "outgoingLinks2" ;
-        return;
-    }
-
-    inputFile >> tempJson;
-
-    for( const auto& [key,value] : tempJson.items() )
-        if (value.is_array())
-            for ( const auto& outgoingUrl : value )  
-                url_OutgoingLinks[key].emplace_back(outgoingUrl.get<string>());
-
 
 }
 
@@ -118,81 +229,6 @@ void TF_IDFcalculation(  unordered_map<string , vector< pair<string,double> > > 
         }
     }
 }
-
-
-unordered_map<string , vector<string> > creatingInboundLinksMapping ( unordered_map<string , vector<string> > url_OutgoingLinks  )
-{
-    unordered_map<string , vector<string> > inboundLinks_URL;
-
-     // Traverse the outgoing links unordered_map
-     // might switch to this later
-    #pragma omp parallel for 
-    for (const auto& [sourceUrl, outgoingUrls] : url_OutgoingLinks) {
-        for (const auto& targetUrl : outgoingUrls) {
-            // Add the source URL as an inbound link for the target URL
-            inboundLinks_URL[targetUrl].push_back(sourceUrl);
-        }
-    }
-
-    return inboundLinks_URL;
-}    
-
-unordered_map<string, pair<double, vector<string>>> initializePageRank( unordered_map<string, vector<string>> url_OutgoingLinks) 
-{
-    unordered_map<string, pair<double, vector<string>>> pageRankMap;
-    size_t numberOfDocs = url_OutgoingLinks.size();
-    double initialPageRank = 1.0 / numberOfDocs;
-
-    for (const auto& entry : url_OutgoingLinks) {
-        const string& url = entry.first;
-        pageRankMap[url] = {initialPageRank, entry.second};  // Initialize PageRank and outbound links
-    }
-
-    return pageRankMap;
-}
-
-double getPageRankContributionFromPages( unordered_map<string, pair<double, vector<string>>> outboundLinksWithPageRank, unordered_map<string, vector<string>> inboundLinks_URL, string url) 
-{
-    double contribution = 0.0;
-    vector<string> inboundUrls = inboundLinks_URL[url];
-
-    for (const string& incomingUrl : inboundUrls) 
-    {
-        const auto& [pageRank, outboundLinks] = outboundLinksWithPageRank[incomingUrl];
-        if (!outboundLinks.empty()) 
-            contribution += pageRank / outboundLinks.size();  // Contribution from each inbound link
-    }
-
-    return contribution;
-}
-
-void calculateFinalPageRanks(unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank, unordered_map<string, vector<string>> inboundLinks_URL) 
-{
-    double error = 1.0;
-    const double errorMargin = 0.0001;
-    const double dampingFactor = 0.85;
-    double noOfPages = outboundLinksWithPageRank.size();
-    bool converged = false;
-
-    while (!converged) 
-    {
-        converged = true;
-        for (auto& [url, data] : outboundLinksWithPageRank) {
-            auto& [currentPageRank, outboundLinks] = data;
-
-            double newPageRank = (1 - dampingFactor) / noOfPages +
-                                 dampingFactor * getPageRankContributionFromPages(outboundLinksWithPageRank, inboundLinks_URL, url);
-
-            if (abs(newPageRank - currentPageRank) < errorMargin) {
-                converged = true;
-            }
-
-            currentPageRank = newPageRank;  // Update the PageRank
-        }
-    }
-
-}
-
 
 void writeTFIDFToFile(const unordered_map<string, vector<pair<string, double>>>& keyWords_Urls)
 {
@@ -222,68 +258,3 @@ void writeTFIDFToFile(const unordered_map<string, vector<pair<string, double>>>&
     outputFile << tfidfJson.dump(4);  // Dump the JSON with indentation of 4 spaces
     outputFile.close();
 }
-
-void writePageRankToFile(const unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank) 
-{
-    json pageRankJson;
-
-    for (const auto& entry : outboundLinksWithPageRank) {
-        string url = entry.first;
-        double pageRank = entry.second.first;
-
-        pageRankJson[url] = pageRank;
-    }
-
-    // Write to file
-    ofstream outputFile("../jsonFiles/pagerank_output.json");
-    if (!outputFile.is_open()) {
-        cerr << "Error: Could not open the file to write PageRank data." << endl;
-        return;
-    }
-
-    outputFile << pageRankJson.dump(4);  // Dump the JSON with indentation of 4 spaces
-    outputFile.close();
-}
-
-// void calculateFinalPageRanks(unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank, 
-//                              unordered_map<string, vector<string>> inboundLinks_URL) 
-// {
-//     const double errorMargin = 0.0001;
-//     const double dampingFactor = 0.85;
-//     double noOfPages = outboundLinksWithPageRank.size();
-//     unordered_map<string, double> previousPageRankMap;
-
-//     // Initialize previousPageRankMap with current PageRank values
-//     for (const auto& [url, data] : outboundLinksWithPageRank) {
-//         previousPageRankMap[url] = data.first;
-//     }
-
-//     bool converged = false;
-
-//     while (!converged) 
-//     {
-//         double totalChange = 0.0;
-
-//         for (auto& [url, data] : outboundLinksWithPageRank) {
-//             auto& [currentPageRank, outboundLinks] = data;
-
-//             // Calculate the new PageRank
-//             double newPageRank = (1 - dampingFactor) / noOfPages +
-//                                  dampingFactor * getPageRankContributionFromPages(outboundLinksWithPageRank, inboundLinks_URL, url);
-
-//             // Add the absolute change to totalChange
-//             totalChange += abs(newPageRank - previousPageRankMap[url]);
-
-//             // Update previousPageRankMap for the next iteration
-//             previousPageRankMap[url] = currentPageRank;
-
-//             // Update the current PageRank
-//             currentPageRank = newPageRank;
-//         }
-
-//         // Check convergence condition based on totalChange
-//         if (totalChange < errorMargin) {
-//             converged = true;
-//         }
-//     }
-// }
