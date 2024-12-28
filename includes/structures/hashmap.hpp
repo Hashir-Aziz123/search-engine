@@ -76,6 +76,22 @@ public:
         return nullptr; // Key not found
     }
 
+    ValueType &at(const KeyType &key) {
+        return *find(key);
+    }
+
+    // Returns number of elements matching a specific key
+    size_t count(const KeyType &key) {
+        size_t count = 0;
+        for (const auto &bucket : buckets) {
+            for (const auto &pair : bucket) {
+                if (key == pair.first) count++;
+            }
+        }
+
+        return count;
+    }
+
     // Erase a key-value pair
     bool erase(const KeyType &key) {
         size_t index = getBucketIndex(key);
