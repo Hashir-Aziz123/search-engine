@@ -1,0 +1,8 @@
+jsonFiles/*
+crawler/__pycache__
+crawler/crawler
+search/__pycache__
+search/search
+indexer/indexer
+.vscode
+__pycache__
