@@ -1,15 +1,14 @@
-/*
-g++ search.cpp -o search -L/usr/lib/x86_64-linux-gnu -I/usr/include/python3.10 -I../includes -lpython3.10 -g
-*/
-
 #include <iostream>
 #include <algorithm>
 #include <vector>
 #include <sstream>
 #include <cmath>
+#include <regex>
+#include <curl/curl.h>
 #include <pybind11/embed.h>
 #include <nlohmann/json.hpp>
 #include "structures/hashmap.hpp"
+#include "crow.h"
 
 using json = nlohmann::json;
 
@@ -71,6 +70,7 @@ std::vector<std::string> split_query(std::string &query) {
 
 HashMap<std::string, double> cosine_similarity(std::string &query, \
     HashMap<std::string, std::vector<std::pair<std::string, double>>> &tfidfmap) {
+        pybind11::gil_scoped_acquire acquire;
         std::vector<std::string> query_terms = split_query(query);
 
         std::unordered_map<std::string, double> query_vector;
@@ -126,45 +126,110 @@ std::vector<std::pair<std::string, double>> get_results(HashMap<std::string, dou
     return results;
 }
 
+std::vector<std::string> order_results(std::vector<std::pair<std::string, double>> unordered_results) {
+    // Sort the vector in descending order based on the double value in the pair
+    std::sort(unordered_results.begin(), unordered_results.end(), 
+              [](const std::pair<std::string, double>& a, const std::pair<std::string, double>& b) {
+                  return a.second > b.second; // Compare the second element of the pairs
+              });
+    
+    // Create a vector to store the ordered strings
+    std::vector<std::string> ordered_strings;
+    ordered_strings.reserve(unordered_results.size()); // Reserve space for efficiency
+
+    // Extract the strings from the sorted pairs
+    for (const auto& pair : unordered_results) {
+        ordered_strings.push_back(pair.first);
+    }
+
+    return ordered_strings;
+}
+
+// Callback function for writing data received by libcurl
+size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userData) {
+    size_t totalSize = size * nmemb;
+    userData->append(static_cast<char*>(contents), totalSize);
+    return totalSize;
+}
+
+// Function to extract the title from the HTML
+std::string extractTitle(const std::string& html) {
+    std::regex titleRegex("<title>(.*?)</title>", std::regex::icase);
+    std::smatch match;
+    if (std::regex_search(html, match, titleRegex)) {
+        return match[1].str();
+    }
+    return "";
+}
+
+// Function to extract the meta description from the HTML
+std::string extractMetaDescription(const std::string& html) {
+    std::regex metaRegex("<meta[^>]*name=\"description\"[^>]*content=\"(.*?)\"[^>]*>", std::regex::icase);
+    std::smatch match;
+    if (std::regex_search(html, match, metaRegex)) {
+        return match[1].str();
+    }
+    return "";
+}
+
+HashMap<std::string, std::pair<std::string, std::string>> get_title_and_desc(std::vector<std::string> &result) {
+    HashMap<std::string, std::pair<std::string, std::string>> res;
+
+    CURL *curl = curl_easy_init();
+    CURLcode resp;
+
+    for (const auto &url : result) {
+        std::string html_content, title, description;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &html_content);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36");
+
+        resp = curl_easy_perform(curl);
+
+        title = extractTitle(html_content);
+        description = extractMetaDescription(html_content);
+
+        res[url] = {title, description};
+    }
+
+    curl_easy_cleanup(curl);
+    return res;
+}
+
 int main() {
+    crow::SimpleApp app;
+    
     HashMap<std::string, std::vector<std::pair<std::string, double>>> tfidfmap;
     read_tfidf(tfidfmap);
-
-    std::string query;
-    
-    std::cout << "Enter query: ";
-    std::getline(std::cin, query);
-
-    std::transform(query.begin(), query.end(), query.begin(), [](char c) {
-        return tolower(c);
-    });
-
-    // pybind11::gil_scoped_acquire acquire;
-    // pybind11::object lemmatized_query = lemmatize_word(query);
-    // query = lemmatized_query.cast<std::string>();
-
-    HashMap<std::string, double> sim = cosine_similarity(query, tfidfmap);
-
-    std::cout << "Query:" << query << '\n';
-
-    std::cout << "COSINE SIMILARITY:\n";
-    for (const auto &[doc, cs] : sim) {
-        std::cout << doc << ": " << cs << '\n';
-    }
 
     HashMap<std::string, double> pagerankmap;
     read_pagerank(pagerankmap);
 
-    std::cout << "\nPAGE RANK:\n";
-    for (const auto &[url, rank] : pagerankmap) {
-        std::cout << url << ": " << rank << '\n';
-    }
+    CROW_ROUTE(app, "/search").methods("POST"_method)([&](const crow::request &req) {
+        auto body = json::parse(req.body);
+        std::string query = body["query"];
+        std::transform(query.begin(), query.end(), query.begin(), [](char c) {
+            return tolower(c);
+        });
 
-    std::cout << "\nRESULTS:\n";
-    std::vector<std::pair<std::string, double>> results = get_results(sim, pagerankmap);
-    for (const auto &[url, rank] : results) {
-        std::cout << url << ": " << rank << '\n';
-    }
+        HashMap<std::string, double> sim = cosine_similarity(query, tfidfmap);
+        auto results = get_results(sim, pagerankmap);
+
+        std::vector<std::string> final_result = order_results(results);
+        HashMap<std::string, std::pair<std::string, std::string>> full_result = get_title_and_desc(final_result);
+
+        json response;
+        for (const auto &url : final_result) {
+            response.push_back({{"title", full_result.find(url)->first}, {"URL", url}, {"description", full_result.find(url)->second}});
+        }
+
+        return crow::response(response.dump());
+    });
+
+    pybind11::gil_scoped_release release;
+    app.port(1337).multithreaded().run();
+    pybind11::gil_scoped_acquire acquire;
 
     return 0;
 }
