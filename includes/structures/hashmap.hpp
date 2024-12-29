@@ -1,9 +1,12 @@
+#ifndef _HASHMAP_H_
+#define _HASHMAP_H_
+
 #include <iostream>
 #include <vector>
 #include <list>
-#include <functional> // for std::hash
-#include <utility>    // for std::pair
-#include <stdexcept>  // for exceptions
+#include <functional>
+#include <utility>
+#include <stdexcept>
 #include <fstream>
 
 //initial hashmap size
@@ -189,3 +192,5 @@ public:
         return Iterator(&buckets, buckets.size(), buckets.back().end());
     }
 };
+
+#endif
