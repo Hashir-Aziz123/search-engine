@@ -8,6 +8,7 @@
 #include <utility>
 #include <stdexcept>
 #include <fstream>
+#include "structures/list.hpp"
 
 //initial hashmap size
 #define INIT_MAP_SIZE 100
@@ -15,21 +16,19 @@
 template <typename KeyType, typename ValueType>
 class HashMap {
 private:
-    // Define a bucket as a list of pairs (key, value)
+    // A single bucket is a linked list of pairs
     typedef std::pair<KeyType, ValueType> Pair;
-    typedef std::list<Pair> Bucket;
+    typedef CustomList<Pair> Bucket;
 
-    std::vector<Bucket> buckets; // Vector of buckets
-    size_t bucketCount;          // Number of buckets
-    size_t size;                 // Total number of elements
-    const double loadFactorThreshold = 0.75; // Threshold to trigger rehashing
+    std::vector<Bucket> buckets;
+    size_t bucketCount;
+    size_t size;
+    const double loadFactorThreshold = 0.75; // Load factor at which the table is rehashed
 
-    // Hash function to map keys to indices
     size_t getBucketIndex(const KeyType &key) const {
         return std::hash<KeyType>{}(key) % bucketCount;
     }
 
-    // Rehashing: Expand and reinsert all elements into new buckets
     void rehash() {
         size_t newBucketCount = bucketCount * 2;
         std::vector<Bucket> newBuckets(newBucketCount);
@@ -46,40 +45,48 @@ private:
     }
 
 public:
-    // Constructor
     HashMap(size_t initialBucketCount = INIT_MAP_SIZE) : bucketCount(initialBucketCount), size(0) {
         buckets.resize(bucketCount);
     }
 
-    // Insert a key-value pair
     void insert(const std::pair<KeyType, ValueType> &keyValuePair) {
         if ((double)size / bucketCount >= loadFactorThreshold) {
-            rehash(); // Rehash when load factor exceeds threshold
+            rehash();
         }
 
         size_t index = getBucketIndex(keyValuePair.first);
         for (auto &pair : buckets[index]) {
             if (pair.first == keyValuePair.first) {
-                pair.second = keyValuePair.second; // Update existing key
+                pair.second = keyValuePair.second;
                 return;
             }
         }
-        buckets[index].emplace_back(keyValuePair); // Insert new key-value pair
+        buckets[index].emplace_back(keyValuePair);
         ++size;
     }
 
-    // Find value by key
-    ValueType *find(const KeyType &key) {
+    ValueType* find(const KeyType &key) {
         size_t index = getBucketIndex(key);
         for (auto &pair : buckets[index]) {
             if (pair.first == key) {
-                return &pair.second; // Return pointer to value
+                return &pair.second;
             }
         }
         return nullptr; // Key not found
     }
 
-    ValueType &at(const KeyType &key) {
+
+    // ValueType *find(const KeyType &key) const {
+    //     size_t index = getBucketIndex(key);
+    //     for (auto &pair : buckets[index]) {
+    //         if (pair.first == key) {
+    //             return &pair.second;
+    //         }
+    //     }
+    //     return nullptr; // Key not found
+    // }
+
+    ValueType &at(const KeyType &key) const {
         return *find(key);
     }
 
@@ -95,7 +102,6 @@ public:
         return count;
     }
 
-    // Erase a key-value pair
     bool erase(const KeyType &key) {
         size_t index = getBucketIndex(key);
         auto &bucket = buckets[index];
@@ -106,30 +112,26 @@ public:
                 return true;
             }
         }
-        return false; // Key not found
+        return false;
     }
 
-    // Operator[] for easy access (like std::unordered_map)
     ValueType &operator[](const KeyType &key) {
         size_t index = getBucketIndex(key);
         for (auto &pair : buckets[index]) {
             if (pair.first == key) {
-                return pair.second; // Return existing value
+                return pair.second;
             }
         }
 
-        // If key does not exist, insert it with a default value
         buckets[index].emplace_back(key, ValueType());
         ++size;
         return buckets[index].back().second;
     }
 
-    // Get current size
     size_t getSize() const {
         return size;
     }
 
-    // Check if the hashmap is empty
     bool empty() const {
         return size == 0;
     }
@@ -139,14 +141,12 @@ public:
     }
 
     //Iterator
-        // --- Iterator Implementation ---
     class Iterator {
     private:
         const std::vector<Bucket> *buckets;
         size_t bucketIndex;
         typename Bucket::const_iterator listIterator;
 
-        // Advance the iterator to the next valid position
         void advanceToNext() {
             while (bucketIndex < buckets->size() && listIterator == (*buckets)[bucketIndex].end()) {
                 ++bucketIndex;
@@ -157,10 +157,8 @@ public:
         }
 
     public:
-        // Constructor
         Iterator(const std::vector<Bucket> *buckets, size_t bucketIndex, typename Bucket::const_iterator listIterator)
             : buckets(buckets), bucketIndex(bucketIndex), listIterator(listIterator) {
-            // Ensure the iterator is positioned at the first valid element
             advanceToNext();
         }
 
@@ -182,14 +180,22 @@ public:
         }
     };
 
-    // Begin iterator
     Iterator begin() const {
         return Iterator(&buckets, 0, buckets[0].begin());
     }
 
-    // End iterator
     Iterator end() const {
         return Iterator(&buckets, buckets.size(), buckets.back().end());
+    }
+
+    Iterator findIterator(const KeyType &key) {
+        size_t index = getBucketIndex(key);
+        for (auto it = buckets[index].begin(); it != buckets[index].end(); ++it) {
+            if (it->first == key) {
+                return Iterator(&buckets, index, it);
+            }
+        }
+        return end();
     }
 };
 
