@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 #include "structures/hashmap.hpp"
 #include "crow.h"
+#include "crow/middlewares/cors.h"
 
 using json = nlohmann::json;
 
@@ -198,7 +199,7 @@ HashMap<std::string, std::pair<std::string, std::string>> get_title_and_desc(std
 }
 
 int main() {
-    crow::SimpleApp app;
+    crow::App<crow::CORSHandler> app;
     
     HashMap<std::string, std::vector<std::pair<std::string, double>>> tfidfmap;
     read_tfidf(tfidfmap);
