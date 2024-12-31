@@ -10,7 +10,7 @@
 #include <map>
 #include <queue>
 #include <set>
-#include "structures/hashmap.hpp"
+#include "../includes/structures/hashmap.hpp"
 
 #include <curl/curl.h>
 #include <libxml/HTMLparser.h>
@@ -109,7 +109,7 @@ py::module lemmatizer = py::module::import("lemmatizer");
 py::object lemmatize_word = lemmatizer.attr("lemmatize_word");
 
 //maximum number of websites each thread will crawl
-#define MAX_SITES 10
+#define MAX_SITES 5000
 
 int main()
 {
@@ -187,6 +187,7 @@ void crawlWeb(const char* baseURL)
     while (sites > 0 && !urlQueue.empty())
     {
         sites--;
+        cout << "sites remaining :" << sites << endl ; 
         const string currentURL = urlQueue.front();
         urlQueue.pop();
 
@@ -348,7 +349,7 @@ void handleURLDetection(xmlNode* node , const char* baseURL , const string& curr
             return;
         }
 
-        // Ensuring domain consistency
+        // Ensuring domain consist
         string tempUrlString(resolvedURL);  // THESE THREE ATTRIBUTES ARE USED LATER
         size_t posDot1 = tempUrlString.find("//") + 2; // Find the start of the domain
         size_t posDot2 = tempUrlString.find("/", posDot1); // Find the end of the domain part
@@ -384,7 +385,7 @@ void handleURLDetection(xmlNode* node , const char* baseURL , const string& curr
         visitedMutex.lock();
         if (visitedURLs.find(urlString) == visitedURLs.end()) 
         {
-            cout << "Found URL: " << urlString << endl;
+            // cout << "Found URL: " << urlString << endl;
             visitedURLs.insert(urlString);  // Add to visited set
             visitedMutex.unlock();
 
@@ -622,7 +623,7 @@ bool isURLAllowed(const string currentURL , const unordered_set<string>& disallo
 
 vector<string> processKeyWords( string text)
 {
-    cout<< "Processing keyword from word stream";
+    // cout<< "Processing keyword from word stream";
     vector<string> keywords;
     py::gil_scoped_acquire acquire; 
 

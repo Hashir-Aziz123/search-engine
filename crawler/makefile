@@ -6,8 +6,8 @@ CXXFLAGS = `xml2-config --cflags --libs` -lcurl -lpython3.10
 INCLUDES = -I/home/lbp400/.local/lib/python3.10/site-packages/pybind11/include -I/usr/include/python3.10
 
 # Target executable and source files
-TARGET = test2
-SRC = test2.cpp
+TARGET = crawler
+SRC = crawler.cpp
 
 # If you have multiple source files, you can specify them in the SRC variable, like so:
 
