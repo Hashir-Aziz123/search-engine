@@ -1,33 +1,34 @@
 #include <iostream>
-#include <unordered_map>
+//#include <unordered_map>
 #include <vector>
 #include <string>
 #include <cmath>
 #include <fstream>
 #include <omp.h>
 #include <nlohmann/json.hpp>
+#include "structure/hashmap.hpp"
 
 using namespace std;
 using json = nlohmann::json;
 
 // Function Prototypes
-void fileReadUrl_OutgoingLinks(unordered_map<string, vector<string>>& url_OutgoingLinks);
-unordered_map<string, vector<string>> creatingInboundLinksMapping(const unordered_map<string, vector<string>>& url_OutgoingLinks);
-unordered_map<string, pair<double, vector<string>>> initializePageRank(const unordered_map<string, vector<string>>& url_OutgoingLinks);
-double getPageRankContributionFromPages(const unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const unordered_map<string, vector<string>>& inboundLinks_URL, const string& url);
-void calculateFinalPageRanks(unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const unordered_map<string, vector<string>>& inboundLinks_URL);
-void writePageRankToFile(const unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank);
+void fileReadUrl_OutgoingLinks(HashMap<string, vector<string>>& url_OutgoingLinks);
+HashMap<string, vector<string>> creatingInboundLinksMapping(const HashMap<string, vector<string>>& url_OutgoingLinks);
+HashMap<string, pair<double, vector<string>>> initializePageRank(const HashMap<string, vector<string>>& url_OutgoingLinks);
+double getPageRankContributionFromPages(const HashMap<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const HashMap<string, vector<string>>& inboundLinks_URL, const string& url);
+void calculateFinalPageRanks(HashMap<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const HashMap<string, vector<string>>& inboundLinks_URL);
+void writePageRankToFile(const HashMap<string, pair<double, vector<string>>>& outboundLinksWithPageRank);
 
-void fileReadkeyWords_Urls(unordered_map<string, vector<pair<string, double>>>& keyWords_Urls);
-void TF_IDFcalculation(unordered_map<string, vector<pair<string, double>>>& keyWords_Urls);
-void writeTFIDFToFile(const unordered_map<string, vector<pair<string, double>>>& keyWords_Urls);
+void fileReadkeyWords_Urls(HashMap<string, vector<pair<string, double>>>& keyWords_Urls);
+void TF_IDFcalculation(HashMap<string, vector<pair<string, double>>>& keyWords_Urls);
+void writeTFIDFToFile(const HashMap<string, vector<pair<string, double>>>& keyWords_Urls);
 
 // Main Function
 int main() {
     // Initializing data structures
     cout << "running" << endl;
-    unordered_map<string, vector<pair<string, double>>> keyWords_Urls;
-    unordered_map<string, vector<string>> url_OutgoingLinks;
+    HashMap<string, vector<pair<string, double>>> keyWords_Urls;
+    HashMap<string, vector<string>> url_OutgoingLinks;
 
     // Reading the data set
     fileReadkeyWords_Urls(keyWords_Urls);
@@ -38,8 +39,8 @@ int main() {
     cout << "TF-IDF WROTE TO FILE" << endl;
 
     // Initialize inbound and outbound links
-    unordered_map<string, vector<string>> inboundLinks_URL = creatingInboundLinksMapping(url_OutgoingLinks);
-    unordered_map<string, pair<double, vector<string>>> outboundLinksWithPageRank = initializePageRank(url_OutgoingLinks);
+    HashMap<string, vector<string>> inboundLinks_URL = creatingInboundLinksMapping(url_OutgoingLinks);
+    HashMap<string, pair<double, vector<string>>> outboundLinksWithPageRank = initializePageRank(url_OutgoingLinks);
 
     // Calculate final PageRanks
     calculateFinalPageRanks(outboundLinksWithPageRank, inboundLinks_URL);
@@ -51,7 +52,7 @@ int main() {
     return 0;
 }
 
-void fileReadUrl_OutgoingLinks(unordered_map<string, vector<string>>& url_OutgoingLinks) {
+void fileReadUrl_OutgoingLinks(HashMap<string, vector<string>>& url_OutgoingLinks) {
     json tempJson;
     ifstream inputFile("../jsonFiles/outgoingLinks.json");
     if (!inputFile.is_open()) {
@@ -78,10 +79,9 @@ void fileReadUrl_OutgoingLinks(unordered_map<string, vector<string>>& url_Outgoi
     }
 }
 
-unordered_map<string, vector<string>> creatingInboundLinksMapping(const unordered_map<string, vector<string>>& url_OutgoingLinks) {
-    unordered_map<string, vector<string>> inboundLinks_URL;
+HashMap<string, vector<string>> creatingInboundLinksMapping(const HashMap<string, vector<string>>& url_OutgoingLinks) {
+    HashMap<string, vector<string>> inboundLinks_URL;
 
-    // Traverse the outgoing links unordered_map
     #pragma omp parallel for
     for (const auto& [sourceUrl, outgoingUrls] : url_OutgoingLinks) {
         for (const auto& targetUrl : outgoingUrls) {
@@ -93,8 +93,8 @@ unordered_map<string, vector<string>> creatingInboundLinksMapping(const unordere
     return inboundLinks_URL;
 }
 
-unordered_map<string, pair<double, vector<string>>> initializePageRank(const unordered_map<string, vector<string>>& url_OutgoingLinks) {
-    unordered_map<string, pair<double, vector<string>>> pageRankMap;
+HashMap<string, pair<double, vector<string>>> initializePageRank(const HashMap<string, vector<string>>& url_OutgoingLinks) {
+    HashMap<string, pair<double, vector<string>>> pageRankMap;
     size_t numberOfDocs = url_OutgoingLinks.size();
     double initialPageRank = 1.0 / numberOfDocs;
 
@@ -106,7 +106,7 @@ unordered_map<string, pair<double, vector<string>>> initializePageRank(const uno
     return pageRankMap;
 }
 
-double getPageRankContributionFromPages(const unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const unordered_map<string, vector<string>>& inboundLinks_URL, const string& url) {
+double getPageRankContributionFromPages(const HashMap<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const HashMap<string, vector<string>>& inboundLinks_URL, const string& url) {
     double contribution = 0.0;
 
     // Check if the URL exists in the inboundLinks_URL map
@@ -124,7 +124,7 @@ double getPageRankContributionFromPages(const unordered_map<string, pair<double,
     return contribution;
 }
 
-void calculateFinalPageRanks(unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const unordered_map<string, vector<string>>& inboundLinks_URL) {
+void calculateFinalPageRanks(HashMap<string, pair<double, vector<string>>>& outboundLinksWithPageRank, const HashMap<string, vector<string>>& inboundLinks_URL) {
     const double errorMargin = 0.0001;
     const double dampingFactor = 0.85;
     double noOfPages = outboundLinksWithPageRank.size();
@@ -133,7 +133,7 @@ void calculateFinalPageRanks(unordered_map<string, pair<double, vector<string>>>
 
     do {
         error = 0.0;  // Reset error for this iteration
-        unordered_map<string, double> newPageRanks;
+        HashMap<string, double> newPageRanks;
         double sinkPageRank = 0.0;
 
         #pragma omp parallel for reduction(+:sinkPageRank)
@@ -162,7 +162,7 @@ void calculateFinalPageRanks(unordered_map<string, pair<double, vector<string>>>
     } while (error > errorMargin);
 }
 
-void writePageRankToFile(const unordered_map<string, pair<double, vector<string>>>& outboundLinksWithPageRank) {
+void writePageRankToFile(const HashMap<string, pair<double, vector<string>>>& outboundLinksWithPageRank) {
     json pageRankJson;
 
     for (const auto& entry : outboundLinksWithPageRank) {
@@ -183,7 +183,7 @@ void writePageRankToFile(const unordered_map<string, pair<double, vector<string>
     outputFile.close();
 }
 
-void fileReadkeyWords_Urls(unordered_map<string, vector<pair<string,double>>> &keyWords_Urls)
+void fileReadkeyWords_Urls(HashMap<string, vector<pair<string,double>>> &keyWords_Urls)
 {
     json tempJson;
     ifstream inputFile("../jsonFiles/keywords_domains.json");
@@ -205,7 +205,7 @@ void fileReadkeyWords_Urls(unordered_map<string, vector<pair<string,double>>> &k
 
 }
 
-void TF_IDFcalculation(  unordered_map<string , vector< pair<string,double> > > &keyWords_Urls )
+void TF_IDFcalculation(  HashMap<string , vector< pair<string,double> > > &keyWords_Urls )
 {
     size_t NumberOfDocs = keyWords_Urls.size();
 
@@ -230,7 +230,7 @@ void TF_IDFcalculation(  unordered_map<string , vector< pair<string,double> > > 
     }
 }
 
-void writeTFIDFToFile(const unordered_map<string, vector<pair<string, double>>>& keyWords_Urls)
+void writeTFIDFToFile(const HashMap<string, vector<pair<string, double>>>& keyWords_Urls)
 {
     json tfidfJson;
 
