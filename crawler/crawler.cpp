@@ -10,6 +10,8 @@
 #include <map>
 #include <queue>
 #include <set>
+
+#include "structures/queue.hpp"
 #include "../includes/structures/hashmap.hpp"
 
 #include <curl/curl.h>
@@ -79,14 +81,14 @@ size_t storeHTML(void *packetContent, size_t size, size_t nmemb, void* node); //
 void crawlWeb (const char* baseURL ); 
 char* resolveURL(const char* baseURL, const char* relativeURL);
 Node makeHTTPRequest(CURL* curl, const char* baseURL);
-void parseHTML(char* HTML, const char* baseURL, const string& currentURL, queue<string>& urlQueue);
-void dom_traversal_and_processing(xmlNode* node, const char* baseURL , const string& currentURL,  char* HTML_Content, unsigned int *totalWords, queue<string>& urlQueue);
+void parseHTML(char* HTML, const char* baseURL, const string& currentURL, Queue<string>& urlQueue);
+void dom_traversal_and_processing(xmlNode* node, const char* baseURL , const string& currentURL,  char* HTML_Content, unsigned int *totalWords, Queue<string>& urlQueue);
 void keywordCountDOMTraversal(xmlNode *node, const char *baseURL, const string& currentURL, char* HTML_CONTENT, unsigned int *totalWords);
 string extractDomain(const string& url);
 
 //FUNCTIONS TO PROCESS HTML CONTENT
 void handleKeyWordsDetection(xmlNode* node, const string& currentURL, char* HTML_Content, unsigned int *totalWords);
-void handleURLDetection(xmlNode* node, const char* baseURL, const string& currentURL, queue<string>& urlQueue);
+void handleURLDetection(xmlNode* node, const char* baseURL, const string& currentURL, Queue<string>& urlQueue);
 int getKeywordCount(string keyword, char* HTML_Content);
 
 // FUNCTIONS TO CHECK ROBOT.TXT COMPLIANCE
@@ -117,7 +119,7 @@ int main()
 
     vector<future<void>> futures;
     //A new thread is created for each URL in this vector
-    vector<const char*> urls = {"https://wikipedia.org", "https://alltop.com"};
+    vector<const char*> urls = {"http://localhost:8080", "http://example.com"};
     for (const auto &url : urls) {
         futures.push_back(async(launch::async, crawlWeb, url));
     }
@@ -153,14 +155,14 @@ int main()
 
 void crawlWeb(const char* baseURL)
 {
-    queue<string> urlQueue;
+    Queue<string> urlQueue;
     unsigned int sites = MAX_SITES;
 
     CURL* curl;
     curl = curl_easy_init();
     if (curl == nullptr) 
     {
-        cout << "Failed to initialize curl" << endl;
+        //cout << "Failed to initialize curl" << endl;
         return;
     }
 
@@ -186,6 +188,7 @@ void crawlWeb(const char* baseURL)
     // Making request
     while (sites > 0 && !urlQueue.empty())
     {
+        cout << sites << '\n';
         sites--;
         cout << "sites remaining :" << sites << endl ; 
         const string currentURL = urlQueue.front();
@@ -194,7 +197,7 @@ void crawlWeb(const char* baseURL)
         string newDomain  = extractDomain( currentURL ) ; 
         if ( newDomain != currentDomain) // getting robots.txt of new domain
         {
-            cout << "Switching to new domain: " << newDomain << endl;
+            //cout << "Switching to new domain: " << newDomain << endl;
             currentDomain = newDomain;
 
             // Fetch and check the robots.txt for the new domain
@@ -211,7 +214,7 @@ void crawlWeb(const char* baseURL)
             }
         }
 
-        if ( !isURLAllowed ( currentURL, disallowedPaths) )
+        if (!isURLAllowed(currentURL, disallowedPaths))
         {
             cout<< "URL dissallowed by robots.txt" << currentURL << endl;
             continue;
@@ -266,7 +269,7 @@ Node makeHTTPRequest(CURL* curl, const char* baseURL)
 }
 
 
-void parseHTML(char* HTML, const char* baseURL, const string& currentURL, queue<string>& urlQueue) {
+void parseHTML(char* HTML, const char* baseURL, const string& currentURL, Queue<string>& urlQueue) {
     htmlDocPtr doc = htmlReadMemory(HTML, strlen(HTML), baseURL, NULL, HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING);
     if (doc == NULL) {
         cout << "Parsing failed. Exiting function" << endl;
@@ -281,7 +284,7 @@ void parseHTML(char* HTML, const char* baseURL, const string& currentURL, queue<
     xmlFreeDoc(doc);
 }
 
-void dom_traversal_and_processing(xmlNode* node, const char* baseURL, const string& currentURL, char* HTML_CONTENT, unsigned int *totalWords, queue<string>& urlQueue) {
+void dom_traversal_and_processing(xmlNode* node, const char* baseURL, const string& currentURL, char* HTML_CONTENT, unsigned int *totalWords, Queue<string>& urlQueue) {
     for (; node; node = node->next) {
         if (xmlStrcasecmp(node->name, BAD_CAST "a") == 0)
             handleURLDetection(node, baseURL, currentURL, urlQueue);
@@ -322,7 +325,7 @@ void keywordCountDOMTraversal(xmlNode *node, const char *baseURL, const string& 
 
 //FUNCTIONS TO PROCESS HTML CONTENT
 
-void handleURLDetection(xmlNode* node , const char* baseURL , const string& currentURL, queue<string>& urlQueue)
+void handleURLDetection(xmlNode* node , const char* baseURL , const string& currentURL, Queue<string>& urlQueue)
 {
     xmlChar* href = xmlGetProp(node, BAD_CAST "href");
 
@@ -364,10 +367,10 @@ void handleURLDetection(xmlNode* node , const char* baseURL , const string& curr
         }
 
         // Standardizing all URLs to "www" prefix
-        if (strncmp(tempUrlString.c_str(), "http://www.", 11) != 0 && strncmp(tempUrlString.c_str(), "https://www.", 12) != 0) 
-        {
-            tempUrlString = tempUrlString.substr(0, posDot1) + "www." + tempUrlString.substr(posDot1);
-        }
+        // if (strncmp(tempUrlString.c_str(), "http://www.", 11) != 0 && strncmp(tempUrlString.c_str(), "https://www.", 12) != 0) 
+        // {
+        //     tempUrlString = tempUrlString.substr(0, posDot1) + "www." + tempUrlString.substr(posDot1);
+        // }
 
         // removing traling slashes
         if (tempUrlString[tempUrlString.length() - 1] == '/') 

@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0; /* Removes any default margins */
+}
+/* WeatherWidget.css */
+.weatherwidget-io.custom-widget-style {
+  width: 340px; /* Set the width as per your requirement */
+  height: 30px;
+  margin: 0; /* Center align */
+  text-align: center;
+  padding: 5px; /* Adjust padding as needed */
+  background-color: #f0f0f0; /* Background color to match your layout */
+}
