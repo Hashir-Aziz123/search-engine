@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import FoundResults from "./FoundResults";
 
@@ -6,15 +6,18 @@ function Results({ query, setQuery }) {
   const location = useLocation();
   const navigate = useNavigate();
   const searchQuery = new URLSearchParams(location.search).get("query");
+  const [resultsQuery, setResultsQuery] = useState("");
 
   useEffect(() => {
     if (searchQuery) {
       setQuery(searchQuery);
+      setResultsQuery(searchQuery);
     }
   }, [searchQuery, setQuery]);
 
   const handleSearch = (event) => {
     event.preventDefault();
+    setResultsQuery(query); // Trigger the search with the current input value
     navigate(`/results?query=${query}`);
   };
 
@@ -61,7 +64,7 @@ function Results({ query, setQuery }) {
         </form>
       </div>
       <div className="text-center">
-        <FoundResults query={query} />
+        <FoundResults query={resultsQuery} />
       </div>
     </div>
   );
