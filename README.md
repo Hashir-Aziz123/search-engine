@@ -8,9 +8,13 @@ A modular search engine that crawls, indexes, and retrieves web data efficiently
 search-engine/
 
 ├── crawler/                 # Crawls target domains and extracts page content
+
 ├── indexer/                 # Tokenizes content, builds inverted index
+
 ├── search/                  # Processes queries and returns ranked results
+
 ├── frontend/                # User interface for searching and displaying results
+
 ├── includes/structures/     # Shared C++ structures (Document, InvertedIndex, etc.)
 
 ## Key Features
