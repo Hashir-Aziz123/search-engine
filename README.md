@@ -6,6 +6,7 @@ A modular search engine that crawls, indexes, and retrieves web data efficiently
 
 ## Project Structure
 search-engine/
+
 ├── crawler/                 # Crawls target domains and extracts page content
 ├── indexer/                 # Tokenizes content, builds inverted index
 ├── search/                  # Processes queries and returns ranked results
